@@ -170,7 +170,21 @@ void PointCloudConcatNode::update() {
 
 void PointCloudConcatNode::publishPointcloud(sensor_msgs::msg::PointCloud2 cloud)
 {
-    cloud.header.stamp = rclcpp::Clock().now();
+    // Use the oldest stamp among received input clouds to keep TF lookups safe (past side).
+    // Overwriting with now() pushes the stamp into the future relative to the actual capture
+    // time and causes "extrapolation into the future" errors in downstream TF consumers.
+    rclcpp::Time oldest;
+    bool have_any = false;
+    auto consider = [&](const sensor_msgs::msg::PointCloud2 & in, bool received) {
+        if (!received) return;
+        rclcpp::Time t(in.header.stamp);
+        if (!have_any || t < oldest) { oldest = t; have_any = true; }
+    };
+    consider(cloud_in1, cloud_in1_received);
+    consider(cloud_in2, cloud_in2_received);
+    consider(cloud_in3, cloud_in3_received);
+    consider(cloud_in4, cloud_in4_received);
+    cloud.header.stamp = have_any ? oldest : this->get_clock()->now();
     pub_cloud_out->publish(cloud);
 }
 
